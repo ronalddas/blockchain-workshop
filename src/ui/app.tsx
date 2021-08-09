@@ -8,23 +8,22 @@ import './app.scss';
 import 'react-toastify/dist/ReactToastify.css';
 import { PolyjuiceHttpProvider } from '@polyjuice-provider/web3';
 import { AddressTranslator } from 'nervos-godwoken-integration';
-
-import { SimpleStorageWrapper } from '../lib/contracts/SimpleStorageWrapper';
 import { CONFIG } from '../config';
+// import { SimpleStorageWrapper } from '../lib/contracts/SimpleStorageWrapper';
+import { TodoListWrapper } from '../lib/contracts/TodoListWrapper';
 
 async function createWeb3() {
     // Modern dapp browsers...
     if ((window as any).ethereum) {
+        // const web3 = new Web3((window as any).ethereum);
         const godwokenRpcUrl = CONFIG.WEB3_PROVIDER_URL;
         const providerConfig = {
             rollupTypeHash: CONFIG.ROLLUP_TYPE_HASH,
             ethAccountLockCodeHash: CONFIG.ETH_ACCOUNT_LOCK_CODE_HASH,
             web3Url: godwokenRpcUrl
         };
-
         const provider = new PolyjuiceHttpProvider(godwokenRpcUrl, providerConfig);
         const web3 = new Web3(provider || Web3.givenProvider);
-
         try {
             // Request account access if needed
             await (window as any).ethereum.enable();
@@ -41,19 +40,20 @@ async function createWeb3() {
 
 export function App() {
     const [web3, setWeb3] = useState<Web3>(null);
-    const [contract, setContract] = useState<SimpleStorageWrapper>();
+    const [contract, setContract] = useState<TodoListWrapper>();
     const [accounts, setAccounts] = useState<string[]>();
-    const [l2Balance, setL2Balance] = useState<bigint>();
+    const [balance, setBalance] = useState<bigint>();
     const [existingContractIdInputValue, setExistingContractIdInputValue] = useState<string>();
-    const [storedValue, setStoredValue] = useState<number | undefined>();
-    const [deployTxHash, setDeployTxHash] = useState<string | undefined>();
-    const [polyjuiceAddress, setPolyjuiceAddress] = useState<string | undefined>();
+    const [taskDesc, setTaskDesc] = useState<string | undefined>();
+    const [taskId, setTaskId] = useState<number | undefined>();
+    const [taskList, setTaskList] = useState<any | undefined>();
+    const [taskCount, setTaskCount] = useState<number | undefined>();
     const [transactionInProgress, setTransactionInProgress] = useState(false);
+    const [polyjuiceAddress, setPolyjuiceAddress] = useState<string | undefined>();
     const toastId = React.useRef(null);
     const [newStoredNumberInputValue, setNewStoredNumberInputValue] = useState<
         number | undefined
-    >();
-
+        >();
     useEffect(() => {
         if (accounts?.[0]) {
             const addressTranslator = new AddressTranslator();
@@ -62,7 +62,6 @@ export function App() {
             setPolyjuiceAddress(undefined);
         }
     }, [accounts?.[0]]);
-
     useEffect(() => {
         if (transactionInProgress && !toastId.current) {
             toastId.current = toast.info(
@@ -85,17 +84,27 @@ export function App() {
     }, [transactionInProgress, toastId.current]);
 
     const account = accounts?.[0];
-
+    const SimpleList = ({ list }) => (
+        <ul>
+            {list.map(item => (
+                <li key={item.id}>
+                    <label>Task ID</label><div>{item.id}</div>
+                    <label>Task Title</label>
+                    <div>{item.title}</div>
+                    <label>Task Completed</label>
+                    <div>{item.completed.toString()}</div>
+                </li>
+            ))}
+        </ul>
+    );
     async function deployContract() {
-        const _contract = new SimpleStorageWrapper(web3);
+        const _contract = new TodoListWrapper(web3);
 
         try {
-            setDeployTxHash(undefined);
             setTransactionInProgress(true);
 
-            const transactionHash = await _contract.deploy(account);
+            await _contract.deploy(account);
 
-            setDeployTxHash(transactionHash);
             setExistingContractAddress(_contract.address);
             toast(
                 'Successfully deployed a smart-contract. You can now proceed to get or set the value in a smart contract.',
@@ -110,28 +119,41 @@ export function App() {
             setTransactionInProgress(false);
         }
     }
-
-    async function getStoredValue() {
-        const value = await contract.getStoredValue(account);
-        toast('Successfully read latest stored value.', { type: 'success' });
-
-        setStoredValue(value);
-    }
-
-    async function setExistingContractAddress(contractAddress: string) {
-        const _contract = new SimpleStorageWrapper(web3);
-        _contract.useDeployed(contractAddress.trim());
-
-        setContract(_contract);
-        setStoredValue(undefined);
-    }
-
-    async function setNewStoredValue() {
-        try {
+    async function createTask(){
+        try{
             setTransactionInProgress(true);
-            await contract.setStoredValue(newStoredNumberInputValue, account);
+            await contract.createTask(taskDesc, account);
             toast(
-                'Successfully set latest stored value. You can refresh the read value now manually.',
+                'Successfully added to task list. You can refresh the read value now manually.',
+                { type: 'success' }
+            );
+        } catch (error) {
+            console.error(error);
+            toast.error(
+                'There was an error sending your transaction. Please check developer console.'
+            );
+        } finally {
+            setTransactionInProgress(false);
+        }
+
+    }
+    async function renderTaskCount() {
+        const task_count = await contract.getTaskCount(account);
+        toast('Successfully read taskCount.', { type: 'success' });
+        setTaskCount(task_count);
+    }
+    async function renderTask(){
+        const task_list= await contract.getTaskList(taskCount,account)
+        console.log(task_list)
+        setTaskList(task_list);
+    }
+    async function toggleCompleted(){
+        try{
+            setTransactionInProgress(true);
+            await contract.toggleTaskCompleted(taskId, account);
+            console.log('Task Completed', taskId);
+            toast(
+                'Successfully toggled task to completed. You can refresh the read value now manually.',
                 { type: 'success' }
             );
         } catch (error) {
@@ -143,6 +165,38 @@ export function App() {
             setTransactionInProgress(false);
         }
     }
+    // async function getStoredValue() {
+    //     const value = await contract.getStoredValue(account);
+    //     toast('Successfully read latest stored value.', { type: 'success' });
+    //
+    //     setStoredValue(value);
+    // }
+
+    async function setExistingContractAddress(contractAddress: string) {
+        const _contract = new TodoListWrapper(web3);
+        _contract.useDeployed(contractAddress.trim());
+
+        setContract(_contract);
+        // setStoredValue(undefined);
+    }
+
+    // async function setNewStoredValue() {
+    //     try {
+    //         setTransactionInProgress(true);
+    //         await contract.setStoredValue(newStoredNumberInputValue, account);
+    //         toast(
+    //             'Successfully set latest stored value. You can refresh the read value now manually.',
+    //             { type: 'success' }
+    //         );
+    //     } catch (error) {
+    //         console.error(error);
+    //         toast.error(
+    //             'There was an error sending your transaction. Please check developer console.'
+    //         );
+    //     } finally {
+    //         setTransactionInProgress(false);
+    //     }
+    // }
 
     useEffect(() => {
         if (web3) {
@@ -159,7 +213,7 @@ export function App() {
 
             if (_accounts && _accounts[0]) {
                 const _l2Balance = BigInt(await _web3.eth.getBalance(_accounts[0]));
-                setL2Balance(_l2Balance);
+                setBalance(_l2Balance);
             }
         })();
     });
@@ -171,15 +225,13 @@ export function App() {
             Your ETH address: <b>{accounts?.[0]}</b>
             <br />
             <br />
-            Your Polyjuice address: <b>{polyjuiceAddress || ' - '}</b>
+            Your Polyjuice address: <b>{polyjuiceAddress}</b>
             <br />
             <br />
-            Nervos Layer 2 balance:{' '}
-            <b>{l2Balance ? (l2Balance / 10n ** 8n).toString() : <LoadingIndicator />} CKB</b>
+            Balance: <b>{balance ? (balance / 10n ** 8n).toString() : <LoadingIndicator />} ETH</b>
             <br />
             <br />
             Deployed contract address: <b>{contract?.address || '-'}</b> <br />
-            Deploy transaction hash: <b>{deployTxHash || '-'}</b>
             <br />
             <hr />
             <p>
@@ -189,7 +241,7 @@ export function App() {
                 read stored value from smart contract or set a new one. You can do that using the
                 interface below.
             </p>
-            <button onClick={deployContract} disabled={!l2Balance}>
+            <button onClick={deployContract} disabled={!balance}>
                 Deploy contract
             </button>
             &nbsp;or&nbsp;
@@ -198,33 +250,47 @@ export function App() {
                 onChange={e => setExistingContractIdInputValue(e.target.value)}
             />
             <button
-                disabled={!existingContractIdInputValue || !l2Balance}
+                disabled={!existingContractIdInputValue || !balance}
                 onClick={() => setExistingContractAddress(existingContractIdInputValue)}
             >
                 Use existing contract
             </button>
             <br />
             <br />
-            <button onClick={getStoredValue} disabled={!contract}>
-                Get stored value
+            <button onClick={renderTaskCount} disabled={!contract}>
+                Get Task Count
             </button>
-            {storedValue ? <>&nbsp;&nbsp;Stored value: {storedValue.toString()}</> : null}
+            {taskCount ? <>&nbsp;&nbsp;Task Count: {taskCount.toString()}</> : null}
+            <br />
+            <br />
+            <button onClick={renderTask} disabled={!contract}>
+                Get Task List
+            </button>
+            {taskList ? <SimpleList list={taskList} /> : null}
             <br />
             <br />
             <input
+                placeholder="Enter Task Id"
                 type="number"
-                onChange={e => setNewStoredNumberInputValue(parseInt(e.target.value, 10))}
+                onChange={e => setTaskId(parseInt(e.target.value,10))}
             />
-            <button onClick={setNewStoredValue} disabled={!contract}>
-                Set new stored value
+            <button onClick={toggleCompleted} disabled={!contract}>
+                Complete Task
             </button>
+            <input
+                placeholder="Enter Task Title"
+                type="text"
+                onChange={e => setTaskDesc(e.target.value)}
+            />
+            <button onClick={createTask} disabled={!contract}>
+                Submit new task
+            </button>
+
             <br />
             <br />
             <br />
             <br />
             <hr />
-            The contract is deployed on Nervos Layer 2 - Godwoken + Polyjuice. After each
-            transaction you might need to wait up to 120 seconds for the status to be reflected.
             <ToastContainer />
         </div>
     );
