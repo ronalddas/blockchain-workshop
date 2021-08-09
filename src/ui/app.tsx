@@ -11,6 +11,7 @@ import { AddressTranslator } from 'nervos-godwoken-integration';
 import { CONFIG } from '../config';
 // import { SimpleStorageWrapper } from '../lib/contracts/SimpleStorageWrapper';
 import { TodoListWrapper } from '../lib/contracts/TodoListWrapper';
+import * as ERC20JSON from '../../build/contracts/ERC20.json';
 
 async function createWeb3() {
     // Modern dapp browsers...
@@ -43,6 +44,7 @@ export function App() {
     const [contract, setContract] = useState<TodoListWrapper>();
     const [accounts, setAccounts] = useState<string[]>();
     const [balance, setBalance] = useState<bigint>();
+    const [sudtBalance, setSudtBalance] = useState<bigint>();
     const [existingContractIdInputValue, setExistingContractIdInputValue] = useState<string>();
     const [taskDesc, setTaskDesc] = useState<string | undefined>();
     const [taskId, setTaskId] = useState<number | undefined>();
@@ -50,14 +52,16 @@ export function App() {
     const [taskCount, setTaskCount] = useState<number | undefined>();
     const [transactionInProgress, setTransactionInProgress] = useState(false);
     const [polyjuiceAddress, setPolyjuiceAddress] = useState<string | undefined>();
+    const [layer2DepositAddress, setLayer2DepositAddress] = useState<string | undefined>();
     const toastId = React.useRef(null);
     const [newStoredNumberInputValue, setNewStoredNumberInputValue] = useState<
         number | undefined
-        >();
+    >();
     useEffect(() => {
         if (accounts?.[0]) {
             const addressTranslator = new AddressTranslator();
             setPolyjuiceAddress(addressTranslator.ethAddressToGodwokenShortAddress(accounts?.[0]));
+
         } else {
             setPolyjuiceAddress(undefined);
         }
@@ -119,6 +123,21 @@ export function App() {
             setTransactionInProgress(false);
         }
     }
+
+    async function getLayer2Address() {
+        const addressTranslator = new AddressTranslator();
+        const depositAddress = await addressTranslator.getLayer2DepositAddress(web3, accounts?.[0]);
+        console.log(`Layer 2 Deposit Address on Layer 1: \n${depositAddress.addressString}`);
+        setLayer2DepositAddress(depositAddress.addressString);
+    }
+
+    async function refreshBalance(){
+        if(account){
+            const _l2Balance = BigInt(await web3.eth.getBalance(account));
+            setBalance(_l2Balance);
+            console.log('refrehed balance')
+        }
+    }
     async function createTask(){
         try{
             setTransactionInProgress(true);
@@ -178,6 +197,8 @@ export function App() {
 
         setContract(_contract);
         // setStoredValue(undefined);
+
+
     }
 
     // async function setNewStoredValue() {
@@ -214,6 +235,32 @@ export function App() {
             if (_accounts && _accounts[0]) {
                 const _l2Balance = BigInt(await _web3.eth.getBalance(_accounts[0]));
                 setBalance(_l2Balance);
+                const addressTranslator = new AddressTranslator();
+                // setPolyjuiceAddress(addressTranslator.ethAddressToGodwokenShortAddress(_accounts[0]));
+                // console.log('polyjuiceAddress', polyjuiceAddress);
+                const depositAddress = await addressTranslator.getLayer2DepositAddress(_web3, _accounts[0]);
+                console.log(`Layer 2 Deposit Address on Layer 1: \n${depositAddress.addressString}`);
+                setLayer2DepositAddress(depositAddress.addressString);
+                // @ts-ignore
+                // const contractProxy = new _web3.eth.Contract(ERC20JSON.abi,
+                //     '0xF4a480351582C524D161AA76d401C67d42B72Eb2'
+                // );
+                const contractProxy = new _web3.eth.Contract(ERC20JSON.abi,
+                    '0xeCDfEcaeBfF89d2a4925A732Aa09481cE5D6a026' // ckETH contract, SUDTID 30
+                );
+
+                const getSudtBalance = async () => {
+                    console.log("call")
+                    const _sudtBalance = await contractProxy.methods.balanceOf(addressTranslator.ethAddressToGodwokenShortAddress(_accounts[0])).call({
+                        from: _accounts[0]
+                    });
+                    console.log('_sudtBalance', _sudtBalance);
+                    setSudtBalance(_sudtBalance);
+
+                    setTimeout(getSudtBalance, 30000);
+                };
+
+                getSudtBalance();
             }
         })();
     });
@@ -227,10 +274,28 @@ export function App() {
             <br />
             Your Polyjuice address: <b>{polyjuiceAddress}</b>
             <br />
+            <button onClick={getLayer2Address} disabled={!balance}>
+                Get Layer2 Address
+            </button>
+            <br />
+            Your Layer2 deposit address: <b>{layer2DepositAddress}</b>
+            <br />
+            <br />
+            To transfer ETH to layer2, please use the <a href="https://force-bridge-test.ckbapp.dev/bridge/Ethereum/Nervos?xchain-asset=0x0000000000000000000000000000000000000000" target="_blank">Force Bridge</a>, use the above layer 2 depositor address in the receiver field.
+            <br />
+            <br />
+            <button onClick={refreshBalance} disabled={!balance}>
+                Refresh Balance
+            </button>
             <br />
             Balance: <b>{balance ? (balance / 10n ** 8n).toString() : <LoadingIndicator />} ETH</b>
             <br />
             <br />
+            ckETH Balance: <b>{sudtBalance ? sudtBalance.toString() : <LoadingIndicator />} ckETH</b>
+            <br />
+
+            <br/>
+
             Deployed contract address: <b>{contract?.address || '-'}</b> <br />
             <br />
             <hr />
